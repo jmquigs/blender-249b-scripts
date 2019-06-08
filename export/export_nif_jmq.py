@@ -34,12 +34,12 @@ import bpy
 
 # --------------------------------------------------------------------------
 # ***** BEGIN LICENSE BLOCK *****
-# 
+#
 # BSD License
-# 
+#
 # Copyright (c) 2005-2011, NIF File Format Library and Tools
 # All rights reserved.
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
 # are met:
@@ -51,7 +51,7 @@ import bpy
 # 3. The name of the NIF File Format Library and Tools project may not be
 #    used to endorse or promote products derived from this software
 #    without specific prior written permission.
-# 
+#
 # THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
 # IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
 # OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
@@ -187,6 +187,19 @@ class NifExport(NifImportExport):
         # return the list of unique exported objects
         return exported_objects
 
+    def clear_temp(self):
+        toRemove = []
+        for ob in Blender.Object.Get():
+            # get rid of stale temp objects
+            if ob.name.find('NifExportTempObj')== 0:
+                toRemove.append(ob)
+
+        for ob in toRemove:
+            self.logger.info("Removing stale temp object %s." % ob)
+            ob.clrParent()
+            Blender.Scene.GetCurrent().objects.unlink(ob)
+            #Blender.Scene.GetCurrent().unlink(ob)
+
     def __init__(self, **config):
         """Main export function."""
 
@@ -262,7 +275,6 @@ class NifExport(NifImportExport):
                 # for morrowind: only keyframe controllers
                 self.logger.info("Exporting animation only (as .kf file)")
 
-            toRemove = []
             for ob in Blender.Object.Get():
                 # armatures should not be in rest position
                 if ob.getType() == 'Armature':
@@ -294,22 +306,16 @@ class NifExport(NifImportExport):
                             "Non-uniform scaling not supported."
                             " Workaround: apply size and rotation (CTRL-A)"
                             " on '%s'." % ob.name)
-                # get rid of stale temp objects
-                if ob.name.find('NifExportTempObj')== 0:
-                    toRemove.append(ob)
-            
-            for ob in toRemove:
-                self.logger.info("Removing stale temp object %s." % ob)
-                ob.clrParent()
-                Blender.Scene.GetCurrent().unlink(ob)
-                                
+
+            self.clear_temp()
+
             # extract some useful scene info
             self.scene = Blender.Scene.GetCurrent()
             context = self.scene.getRenderingContext()
             self.fspeed = 1.0 / context.framesPerSec()
             self.fstart = context.startFrame()
             self.fend = context.endFrame()
-            
+
             # oblivion, Fallout 3 and civ4
             if (self.EXPORT_VERSION
                 in ('Civilization IV', 'Oblivion', 'Fallout 3')):
@@ -317,7 +323,7 @@ class NifExport(NifImportExport):
             # other games
             else:
                 root_name = self.filebase
-     
+
             # get the root object from selected object
             # only export empties, meshes, and armatures
             if (Blender.Object.GetSelected() == None):
@@ -336,7 +342,7 @@ class NifExport(NifImportExport):
                         " or 'Armature' object."
                         % root_object.getName())
                 root_objects.add(root_object)
-                
+
             for root_object in root_objects:
                 self.logger.info("Root object for export: %s/%s" % (root_object.getName(), root_object.getType()) )
 
@@ -344,7 +350,7 @@ class NifExport(NifImportExport):
                 self.logger.info("Scene object: %s/%s" % (ob.getName(), ob.getType()))
                 for mod in ob.modifiers:
                     self.logger.info("  Mod: %s/%s" % (mod.name, mod.type))
-                
+
             # smoothen seams of objects
             if self.EXPORT_SMOOTHOBJECTSEAMS:
                 # get shared vertices
@@ -401,23 +407,23 @@ class NifExport(NifImportExport):
                 animtxt = Blender.Text.Get("Anim")
             except NameError:
                 animtxt = None
-                    
+
             # rebuild the bone extra matrix dictionary from the 'BoneExMat' text buffer
             self.rebuild_bones_extra_matrices()
-            
-            # rebuild the full name dictionary from the 'FullNames' text buffer 
+
+            # rebuild the full name dictionary from the 'FullNames' text buffer
             self.rebuild_full_names()
-            
+
             # export nif:
             #------------
             self.msg_progress("Exporting")
-            
+
             # create a nif object
-            
+
             # export the root node (the name is fixed later to avoid confusing the
             # exporter with duplicate names)
             root_block = self.export_node(None, 'none', None, '')
-            
+
             # export objects
             self.logger.info("Exporting objects")
             for root_object in root_objects:
@@ -1034,7 +1040,7 @@ class NifExport(NifImportExport):
             return
 
         # IO error: raise a menu instead of an exception
-        except IOError, e: 
+        except IOError, e:
             e = str(e).replace("\n", " ")
             Blender.Draw.PupMenu('I/O ERROR%t|' + str(e))
             print 'IOError: ' + str(e)
@@ -1047,6 +1053,9 @@ class NifExport(NifImportExport):
             raise
 
         finally:
+            print 'Attempting to removing temp objects in finally block'
+            self.clear_temp()
+
             # clear progress bar
             self.msg_progress("Finished", progbar = 1)
 
@@ -1083,7 +1092,7 @@ class NifExport(NifImportExport):
             assert(parent_block) # debug
             ob_ipo = ob.getIpo() # get animation data
             ob_children = self.get_b_children(ob)
-            
+
             if (node_name == 'RootCollisionNode'):
                 # -> root collision node (can be mesh or empty)
                 ob.rbShapeBoundType = Blender.Object.RBShapes['POLYHEDERON']
@@ -1197,7 +1206,7 @@ class NifExport(NifImportExport):
             if (ob.getType() == 'Mesh'):
                 # see definition of trishape_space above
                 self.export_tri_shapes(ob, trishape_space, node)
-                
+
             # if it is an armature, export the bones as ninode
             # children of this ninode
             elif (ob.getType() == 'Armature'):
@@ -1268,7 +1277,7 @@ class NifExport(NifImportExport):
 
         # make sure the parent is of the right type
         assert(isinstance(parent_block, NifFormat.NiNode))
-        
+
         # add a keyframecontroller block, and refer to this block in the
         # parent's time controller
         if self.version < 0x0A020000:
@@ -1335,7 +1344,7 @@ class NifExport(NifImportExport):
             return
 
         # -> get keyframe information
-        
+
         # some calculations
         if bind_mat:
             bind_scale, bind_rot, bind_trans = self.decompose_srt(bind_mat)
@@ -1591,7 +1600,7 @@ class NifExport(NifImportExport):
         """
         # create new vertex color property block
         vcolprop = self.create_block("NiVertexColorProperty")
-        
+
         # make it a property of the parent
         block_parent.add_property(vcolprop)
 
@@ -1636,10 +1645,10 @@ class NifExport(NifImportExport):
         # -> get animation groups information
 
         # parse the anim text descriptor
-        
+
         # the format is:
         # frame/string1[/string2[.../stringN]]
-        
+
         # example:
         # 001/Idle: Start/Idle: Stop/Idle2: Start/Idle2: Loop Start
         # 051/Idle2: Stop/Idle3: Start
@@ -1667,14 +1676,14 @@ class NifExport(NifImportExport):
             #print 'frame %d'%f + ' -> \'%s\''%d # debug
             flist.append(f)
             dlist.append(d)
-        
+
         # -> now comes the real export
-        
+
         # add a NiTextKeyExtraData block, and refer to this block in the
         # parent node (we choose the root block)
         textextra = self.create_block("NiTextKeyExtraData", animtxt)
         block_parent.add_extra_data(textextra)
-        
+
         # create a text key for each frame descriptor
         textextra.num_text_keys = len(flist)
         textextra.text_keys.update_size()
@@ -1704,7 +1713,7 @@ class NifExport(NifImportExport):
             if texture.getImage() is None:
                 raise NifExportError(
                     "image type texture has no file loaded ('%s')"
-                    % texture.getName())                    
+                    % texture.getName())
 
             filename = texture.image.getFilename()
 
@@ -1714,7 +1723,7 @@ class NifExport(NifImportExport):
                     "Packed image in texture '%s' ignored, "
                     "exporting as '%s' instead."
                     % (texture.getName(), filename))
-            
+
             # try and find a DDS alternative, force it if required
             ddsfilename = "%s%s" % (filename[:-4], '.dds')
             if Blender.sys.exists(ddsfilename) or self.EXPORT_FORCEDDS:
@@ -1754,7 +1763,7 @@ class NifExport(NifImportExport):
             and when exporting default shader slots that have no use in
             being imported into Blender).
         @return: The exported NiSourceTexture block."""
-        
+
         # create NiSourceTexture
         srctex = NifFormat.NiSourceTexture()
         srctex.use_external = True
@@ -1798,7 +1807,7 @@ class NifExport(NifImportExport):
     # target_tex is the texture to flip ( 0 = base texture, 4 = glow texture )
     #
     # returns exported NiFlipController
-    # 
+    #
     def export_flip_controller(self, fliptxt, texture, target, target_tex):
         tlist = fliptxt.asLines()
 
@@ -1830,16 +1839,16 @@ class NifExport(NifImportExport):
 
 
 
-    # 
+    #
     # Export a blender object ob of the type mesh, child of nif block
     # parent_block, as NiTriShape and NiTriShapeData blocks, possibly
     # along with some NiTexturingProperty, NiSourceTexture,
     # NiMaterialProperty, and NiAlphaProperty blocks. We export one
     # trishape block per mesh material. We also export vertex weights.
-    # 
+    #
     # The parameter trishape_name passes on the name for meshes that
     # should be exported as a single mesh.
-    # 
+    #
     def export_tri_shapes(self, ob, space, parent_block, trishape_name = None):
         self.logger.info("Exporting %s" % ob)
         self.msg_progress("Exporting %s" % ob.name)
@@ -1847,7 +1856,7 @@ class NifExport(NifImportExport):
 
         # get mesh from ob
         mesh = ob.getData(mesh=1) # get mesh data
-        
+
         # getVertsFromGroup fails if the mesh has no vertices
         # (this happens when checking for fallout 3 body parts)
         # so quickly catch this (rare!) case
@@ -1855,22 +1864,22 @@ class NifExport(NifImportExport):
             # do not export anything
             self.logger.warn("%s has no vertices, skipped." % ob)
             return
-        
+
         for mod in ob.modifiers:
             if mod.type == 5:
                 self.logger.info("Object has Mirror modifier: %s/%s" % (ob.getName(), mod.name))
                 zapply = 1
                 if zapply:
-                    
+
                     scn= bpy.data.scenes.active
-                    
+
                     # this works, just need to unlink the dup object
                     useTest = 1
                     if useTest:
                         # since duplicate messes with the selection, need to save it
                         currSelected = scn.objects.selected
                         scn.objects.selected = []
-                        
+
                         # create a duplicate of current object
                         ob.sel = 1
                         Blender.Object.Duplicate(mesh=1)
@@ -1887,11 +1896,11 @@ class NifExport(NifImportExport):
                         # now use the dup object for remainder of export
                         ob = oDup
                         mesh = ob.getData(mesh=1) # re-get mesh data
-                        
+
                         # restore selection
                         for x in currSelected:
                             x.sel = 1
-                    
+
                     # JMQ: this works, but is unusable since it changes the mesh in the original object.
                     # ideally, we'd like to get a complete copy of the original object, change its mesh data
                     # and export using that
@@ -1899,7 +1908,7 @@ class NifExport(NifImportExport):
                     if useWorking:
                         # create a temp object
                         me= bpy.data.meshes.new("TempMirror")
-                        
+
                         tempob= scn.objects.new(me)
                         # set the temp object's data to be the applied mesh data from the source object
                         me.getFromObject(ob)
@@ -1907,12 +1916,12 @@ class NifExport(NifImportExport):
                         ob.getData(mesh=1).getFromObject(tempob)
                         mesh = ob.getData(mesh=1) # re-get mesh data
                         scn.objects.unlink(tempob)
-                    
-                    
+
+
                     #zres = BPyMesh.getMeshFromObject(ob)
                     #if zres != None:
                     #    mesh = zres
-                    #self.logger.info("Applying modifiers: %s" % zres) 
+                    #self.logger.info("Applying modifiers: %s" % zres)
 
         # get the mesh's materials, this updates the mesh material list
         if not isinstance(parent_block, NifFormat.RootCollisionNode):
@@ -1932,7 +1941,7 @@ class NifExport(NifImportExport):
         ### to separate function
         for materialIndex, mesh_mat in enumerate(mesh_mats):
             # -> first, extract valuable info from our ob
-            
+
             mesh_base_mtex = None
             mesh_glow_mtex = None
             mesh_bump_mtex = None
@@ -2163,7 +2172,7 @@ class NifExport(NifImportExport):
                          set(ob.data.getVertsFromGroup(bodypartgroupname))])
 
             # -> now comes the real export
-            
+
             # We now extract vertices, uv-vertices, normals, and vertex
             # colors from the mesh's face list. NIF has one uv vertex and
             # one normal per vertex, unlike blender's uv vertices and
@@ -2176,7 +2185,7 @@ class NifExport(NifImportExport):
             # NIF uses the normal table for lighting. So, smooth faces
             # should use Blender's vertex normals, and solid faces should
             # use Blender's face normals.
-            
+
             vertquad_list = [] # (vertex, uv coordinate, normal, vertex color) list
             vertmap = [None for i in xrange(len(mesh.verts))] # blender vertex -> nif vertices
             vertlist = []
@@ -2231,7 +2240,7 @@ class NifExport(NifImportExport):
                             fcol = f.col[i]
                     else:
                         fcol = None
-                        
+
                     vertquad = ( fv, fuv, fn, fcol )
 
                     # do we already have this quad? (optimized by m_4444x)
@@ -2332,7 +2341,7 @@ class NifExport(NifImportExport):
                     "ERROR%t|Too many faces. Decimate your mesh and try again.")
             if len(vertlist) == 0:
                 continue # m_4444x: skip 'empty' material indices
-            
+
             # note: we can be in any of the following five situations
             # material + base texture        -> normal object
             # material + base tex + glow tex -> normal glow mapped object
@@ -2366,7 +2375,7 @@ class NifExport(NifImportExport):
                 # refer to this block in the parent's
                 # children list
                 parent_block.add_child(trishape)
-            
+
             # fill in the NiTriShape's non-trivial values
             if isinstance(parent_block, NifFormat.RootCollisionNode):
                 trishape.name = ""
@@ -2408,7 +2417,7 @@ class NifExport(NifImportExport):
                 trishape.unknown_integer = -1 # default
 
             self.export_matrix(ob, space, trishape)
-            
+
             if mesh_base_mtex or mesh_glow_mtex:
                 # add NiTriShape's texturing property
                 if self.EXPORT_VERSION == "Fallout 3":
@@ -2418,7 +2427,7 @@ class NifExport(NifImportExport):
                         bumpmtex = mesh_bump_mtex))
                         #glossmtex = mesh_gloss_mtex,
                         #darkmtex = mesh_dark_mtex,
-                        #detailmtex = mesh_detail_mtex)) 
+                        #detailmtex = mesh_detail_mtex))
                 else:
                     if (self.EXPORT_VERSION in self.USED_EXTRA_SHADER_TEXTURES
                         and self.EXPORT_EXTRA_SHADER_TEXTURES):
@@ -2471,7 +2480,7 @@ class NifExport(NifImportExport):
                     # refer to the specular property in the trishape block
                     trishape.add_property(
                         self.export_specular_property(flags=0x0001))
-                
+
                 # add NiTriShape's material property
                 trimatprop = self.export_material_property(
                     name=self.get_full_name(mesh_mat.getName()),
@@ -2483,7 +2492,7 @@ class NifExport(NifImportExport):
                     glossiness=mesh_mat_glossiness,
                     alpha=mesh_mat_transparency,
                     emitmulti=mesh_mat_emitmulti)
-                
+
                 # refer to the material property in the trishape block
                 trishape.add_property(trimatprop)
 
@@ -2513,7 +2522,7 @@ class NifExport(NifImportExport):
                 v.y = vertlist[i][1]
                 v.z = vertlist[i][2]
             tridata.update_center_radius()
-            
+
             if mesh_hasnormals:
                 tridata.has_normals = True
                 tridata.normals.update_size()
@@ -2521,7 +2530,7 @@ class NifExport(NifImportExport):
                     v.x = normlist[i][0]
                     v.y = normlist[i][1]
                     v.z = normlist[i][2]
-                
+
             if mesh_hasvcol:
                 tridata.has_vertex_colors = True
                 tridata.vertex_colors.update_size()
@@ -2592,17 +2601,17 @@ class NifExport(NifImportExport):
                             raise NifExportError(
                                 "Skeleton root '%s' not found."
                                 % armaturename)
-            
+
                         # create skinning data and link it
                         skindata = self.create_block("NiSkinData", ob)
                         skininst.data = skindata
-            
+
                         skindata.has_vertex_weights = True
                         # fix geometry rest pose: transform relative to
                         # skeleton root
                         skindata.set_transform(
                             self.get_object_matrix(ob, 'localspace').get_inverse())
-            
+
                         # add vertex weights
                         # first find weights and normalization factors
                         vert_list = {}
@@ -2626,7 +2635,7 @@ class NifExport(NifImportExport):
                                     vert_norm[v[0]] += v[1]
                                 else:
                                     vert_norm[v[0]] = v[1]
-                        
+
                         # for each bone, first we get the bone block
                         # then we get the vertex weights
                         # and then we add it to the NiSkinData
@@ -2658,12 +2667,12 @@ class NifExport(NifImportExport):
                             for v in vert_list[bone]:
                                 # v[0] is the original vertex index
                                 # v[1] is the weight
-                                
+
                                 # vertmap[v[0]] is the set of vertices (indices)
                                 # to which v[0] was mapped
                                 # so we simply export the same weight as the
                                 # original vertex for each new vertex
-            
+
                                 # write the weights
                                 # extra check for multi material meshes
                                 #self.logger.info("checking bone vert: %s" % vertmap[v[0]])
@@ -2675,7 +2684,7 @@ class NifExport(NifImportExport):
                             # actually any vertices influenced by the bone
                             if vert_weights:
                                 trishape.add_bone(bone_block, vert_weights)
-            
+
                         # each vertex must have been assigned to at least one
                         # vertex group
                         # or the model doesn't display correctly in the TESCS
@@ -2755,7 +2764,7 @@ class NifExport(NifImportExport):
                         del vert_weights
                         del vert_added
 
-            
+
             # shape key morphing
             key = mesh.key
             if key:
@@ -2775,7 +2784,7 @@ class NifExport(NifImportExport):
                             # XXX would this automatically fix the keys?
                             raise ValueError(
                                 "Can only export relative shape keys.")
-                        
+
                         # create geometry morph controller
                         morphctrl = self.create_block("NiGeomMorpherController",
                                                      keyipo)
@@ -2786,14 +2795,14 @@ class NifExport(NifImportExport):
                         ctrlStart = 1000000.0
                         ctrlStop = -1000000.0
                         ctrlFlags = 0x000c
-                        
+
                         # create geometry morph data
                         morphdata = self.create_block("NiMorphData", keyipo)
                         morphctrl.data = morphdata
                         morphdata.num_morphs = len(key.blocks)
                         morphdata.num_vertices = len(vertlist)
                         morphdata.morphs.update_size()
-                        
+
 
                         # create interpolators (for newer nif versions)
                         morphctrl.num_interpolators = len(key.blocks)
@@ -2830,7 +2839,7 @@ class NifExport(NifImportExport):
                                     morph.vectors[vert_index].x = mv.x
                                     morph.vectors[vert_index].y = mv.y
                                     morph.vectors[vert_index].z = mv.z
-                            
+
                             # export ipo shape key curve
                             curve = keyipo[keyblock.name]
 
@@ -3169,7 +3178,7 @@ class NifExport(NifImportExport):
             else:
                 node.flags = 0x0002 # default for Morrowind bones
             self.export_matrix(bone, 'localspace', node) # rest pose
-            
+
             # bone rotations are stored in the IPO relative to the rest position
             # so we must take the rest position into account
             # (need original one, without extra transforms, so extra = False)
@@ -3260,7 +3269,7 @@ class NifExport(NifImportExport):
         transformation matrix in rest pose."""
         # decompose
         bscale, brot, btrans = self.get_object_srt(obj, space)
-        
+
         # and fill in the values
         block.translation.x = btrans[0]
         block.translation.y = btrans[1]
@@ -3290,7 +3299,7 @@ class NifExport(NifImportExport):
         returns the transform relative to the armature."""
         bscale, brot, btrans = self.get_object_srt(obj, space)
         mat = NifFormat.Matrix44()
-        
+
         mat.m_41 = btrans[0]
         mat.m_42 = btrans[1]
         mat.m_43 = btrans[2]
@@ -3309,7 +3318,7 @@ class NifExport(NifImportExport):
         mat.m_24 = 0.0
         mat.m_34 = 0.0
         mat.m_44 = 1.0
-        
+
         return mat
 
     def get_object_srt(self, obj, space = 'localspace'):
@@ -3330,7 +3339,7 @@ class NifExport(NifImportExport):
             return ( 1.0,
                      Blender.Mathutils.Matrix([1,0,0],[0,1,0],[0,0,1]),
                      Blender.Mathutils.Vector([0, 0, 0]) )
-        
+
         assert(space == 'localspace')
 
         # now write out spaces
@@ -3375,7 +3384,7 @@ class NifExport(NifImportExport):
         else:
             # bones, get the rest matrix
             mat = self.get_bone_rest_matrix(obj, 'BONESPACE')
-        
+
         try:
             return self.decompose_srt(mat)
         except NifExportError: # non-uniform scaling
@@ -3494,7 +3503,7 @@ class NifExport(NifImportExport):
         return block
 
     def export_collision(self, obj, parent_block):
-        """Main function for adding collision object obj to a node.""" 
+        """Main function for adding collision object obj to a node."""
         if self.EXPORT_VERSION == 'Morrowind':
              if obj.rbShapeBoundType != Blender.Object.RBShapes['POLYHEDERON']:
                  raise NifExportError(
@@ -3946,7 +3955,7 @@ class NifExport(NifImportExport):
                 raise NifExportError(
                     "ERROR%t|Too many faces/vertices."
                     " Decimate/split your mesh and try again.")
-            
+
             colhull = self.create_block("bhkConvexVerticesShape", obj)
             colhull.material = material
             colhull.radius = 0.1
@@ -4066,7 +4075,7 @@ class NifExport(NifImportExport):
                         min_angle = prop.getData()
                     if (prop.getName() == 'LimitedHinge_MaxFriction'
                         and prop.getType() == "FLOAT"):
-                        max_friction = prop.getData() 
+                        max_friction = prop.getData()
 
                 # parent constraint to hkbody
                 hkbody.num_constraints += 1
@@ -4121,7 +4130,7 @@ class NifExport(NifImportExport):
                 # transform pivot point and constraint matrix into bhkRigidBody
                 # coordinates (also see import_nif.py, the
                 # NifImport.import_bhk_constraints method)
-                
+
                 # the pivot point v' is in object coordinates
                 # however nif expects it in hkbody coordinates, v
                 # v * R * B = v' * O * T * B'
@@ -4227,7 +4236,7 @@ class NifExport(NifImportExport):
         # no specular property with given flag found, so create new one
         specprop = self.create_block("NiSpecularProperty")
         specprop.flags = flags
-        return specprop        
+        return specprop
 
     def export_wireframe_property(self, flags = 0x0001):
         """Return existing wire property with given flags, or create new one
@@ -4240,7 +4249,7 @@ class NifExport(NifImportExport):
         # no alpha property with given flag found, so create new one
         wireprop = self.create_block("NiWireframeProperty")
         wireprop.flags = flags
-        return wireprop        
+        return wireprop
 
     def export_stencil_property(self):
         """Return existing stencil property with given flags, or create new one
@@ -4255,7 +4264,7 @@ class NifExport(NifImportExport):
         stencilprop = self.create_block("NiStencilProperty")
         if self.EXPORT_VERSION == "Fallout 3":
             stencilprop.flags = 19840
-        return stencilprop        
+        return stencilprop
 
     def export_material_property(
         self, name='', flags=0x0001,
@@ -4271,7 +4280,7 @@ class NifExport(NifImportExport):
 
         # create block (but don't register it yet in self.blocks)
         matprop = NifFormat.NiMaterialProperty()
-   
+
         # list which determines whether the material name is relevant or not
         # only for particular names this holds, such as EnvMap2
         # by default, the material name does not affect rendering
@@ -4563,7 +4572,7 @@ class NifExport(NifImportExport):
             block_parent.num_extra_data_list += 1
             block_parent.extra_data_list.update_size()
             block_parent.extra_data_list[-1] = bbox
-            
+
             # set name, center, and dimensions
             bbox.name = "BBX"
             bbox.center.x = (minx + maxx) * 0.5
@@ -4610,7 +4619,7 @@ class NifExport(NifImportExport):
         # customize the node data, depending on type
         if n_node_type == "NiLODNode":
             self.export_range_lod_data(n_node, b_obj)
-            
+
         # return the node
         return n_node
 
