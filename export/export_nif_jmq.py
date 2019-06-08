@@ -1,7 +1,7 @@
 #!BPY
 
 """
-Name: 'NetImmerse/Gamebryo (.nif & .kf & .egm)'
+Name: 'NetImmerse/Gamebryo JMQ (.nif & .kf & .egm)'
 Blender: 245
 Group: 'Export'
 Tooltip: 'Export NIF File Format (.nif & .kf & egm)'
@@ -27,6 +27,10 @@ from nif_common import __version__
 
 import pyffi.spells.nif
 import pyffi.spells.nif.fix
+
+# JMQ
+import BPyMesh
+import bpy
 
 # --------------------------------------------------------------------------
 # ***** BEGIN LICENSE BLOCK *****
@@ -200,7 +204,8 @@ class NifExport(NifImportExport):
 
         # shortcut to export logger
         self.logger = logging.getLogger("niftools.blender.export")
-
+        self.logger.setLevel(logging.INFO)
+        #self.logger.warn("JMQ VERSION")
         # save file name
         self.filename = self.EXPORT_FILE[:]
         self.filepath = Blender.sys.dirname(self.filename)
@@ -257,6 +262,7 @@ class NifExport(NifImportExport):
                 # for morrowind: only keyframe controllers
                 self.logger.info("Exporting animation only (as .kf file)")
 
+            toRemove = []
             for ob in Blender.Object.Get():
                 # armatures should not be in rest position
                 if ob.getType() == 'Armature':
@@ -288,7 +294,15 @@ class NifExport(NifImportExport):
                             "Non-uniform scaling not supported."
                             " Workaround: apply size and rotation (CTRL-A)"
                             " on '%s'." % ob.name)
-
+                # get rid of stale temp objects
+                if ob.name.find('NifExportTempObj')== 0:
+                    toRemove.append(ob)
+            
+            for ob in toRemove:
+                self.logger.info("Removing stale temp object %s." % ob)
+                ob.clrParent()
+                Blender.Scene.GetCurrent().unlink(ob)
+                                
             # extract some useful scene info
             self.scene = Blender.Scene.GetCurrent()
             context = self.scene.getRenderingContext()
@@ -322,7 +336,15 @@ class NifExport(NifImportExport):
                         " or 'Armature' object."
                         % root_object.getName())
                 root_objects.add(root_object)
+                
+            for root_object in root_objects:
+                self.logger.info("Root object for export: %s/%s" % (root_object.getName(), root_object.getType()) )
 
+            for ob in self.scene.objects:
+                self.logger.info("Scene object: %s/%s" % (ob.getName(), ob.getType()))
+                for mod in ob.modifiers:
+                    self.logger.info("  Mod: %s/%s" % (mod.name, mod.type))
+                
             # smoothen seams of objects
             if self.EXPORT_SMOOTHOBJECTSEAMS:
                 # get shared vertices
@@ -1833,6 +1855,64 @@ class NifExport(NifImportExport):
             # do not export anything
             self.logger.warn("%s has no vertices, skipped." % ob)
             return
+        
+        for mod in ob.modifiers:
+            if mod.type == 5:
+                self.logger.info("Object has Mirror modifier: %s/%s" % (ob.getName(), mod.name))
+                zapply = 1
+                if zapply:
+                    
+                    scn= bpy.data.scenes.active
+                    
+                    # this works, just need to unlink the dup object
+                    useTest = 1
+                    if useTest:
+                        # since duplicate messes with the selection, need to save it
+                        currSelected = scn.objects.selected
+                        scn.objects.selected = []
+                        
+                        # create a duplicate of current object
+                        ob.sel = 1
+                        Blender.Object.Duplicate(mesh=1)
+                        oDup = scn.objects.active
+                        oDup.sel = 0
+                        oDup.setName("NifExportTempObj")
+                        # put it on a different layer
+                        oDup.Layer = 16384
+                        # would like clear parent so that it doesn't get accidentlly exported later,
+                        # but doing so effs up the export
+                        # oDup.clrParent()
+                        # replace mesh data with applied-mesh from original
+                        oDup.getData(mesh=1).getFromObject(ob)
+                        # now use the dup object for remainder of export
+                        ob = oDup
+                        mesh = ob.getData(mesh=1) # re-get mesh data
+                        
+                        # restore selection
+                        for x in currSelected:
+                            x.sel = 1
+                    
+                    # JMQ: this works, but is unusable since it changes the mesh in the original object.
+                    # ideally, we'd like to get a complete copy of the original object, change its mesh data
+                    # and export using that
+                    useWorking = 0
+                    if useWorking:
+                        # create a temp object
+                        me= bpy.data.meshes.new("TempMirror")
+                        
+                        tempob= scn.objects.new(me)
+                        # set the temp object's data to be the applied mesh data from the source object
+                        me.getFromObject(ob)
+                        # replace the source object's mesh data with data from the temp object
+                        ob.getData(mesh=1).getFromObject(tempob)
+                        mesh = ob.getData(mesh=1) # re-get mesh data
+                        scn.objects.unlink(tempob)
+                    
+                    
+                    #zres = BPyMesh.getMeshFromObject(ob)
+                    #if zres != None:
+                    #    mesh = zres
+                    #self.logger.info("Applying modifiers: %s" % zres) 
 
         # get the mesh's materials, this updates the mesh material list
         if not isinstance(parent_block, NifFormat.RootCollisionNode):
@@ -2574,6 +2654,7 @@ class NifExport(NifImportExport):
                                     "Bone '%s' not found." % bone)
                             # find vertex weights
                             vert_weights = {}
+                            #self.logger.info("checking bone verts: %s" % vert_list[bone])
                             for v in vert_list[bone]:
                                 # v[0] is the original vertex index
                                 # v[1] is the weight
@@ -2585,6 +2666,7 @@ class NifExport(NifImportExport):
             
                                 # write the weights
                                 # extra check for multi material meshes
+                                #self.logger.info("checking bone vert: %s" % vertmap[v[0]])
                                 if vertmap[v[0]] and vert_norm[v[0]]:
                                     for vert_index in vertmap[v[0]]:
                                         vert_weights[vert_index] = v[1] / vert_norm[v[0]]
@@ -2615,6 +2697,7 @@ class NifExport(NifImportExport):
                                             break
                                     else:
                                         raise RuntimeError("vertmap bug")
+                                    #self.logger.info("bad vert: %d" % idx)
                                     mesh.verts[idx].sel = 1
                             # switch to edit mode and raise exception
                             Blender.Window.EditMode(1)
