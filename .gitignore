@@ -1,0 +1,6 @@
+# ignore everything by default so that I don't get all the unmodified blender scripts
+*.py
+*.pyc
+bpydata
+bpymodules
+
